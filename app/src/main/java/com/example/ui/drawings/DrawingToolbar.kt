@@ -37,13 +37,22 @@ import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -498,6 +507,20 @@ fun SelectedDrawingPropertyBar(
                 )
             }
 
+            // Edit Coordinates
+            var showCoordinatesDialog by remember { mutableStateOf(false) }
+            IconButton(
+                onClick = { showCoordinatesDialog = true },
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Tune,
+                    contentDescription = "Edit Coordinates",
+                    tint = BinanceGold,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
             // Lock / Unlock
             IconButton(
                 onClick = {
@@ -524,6 +547,157 @@ fun SelectedDrawingPropertyBar(
                     tint = BearRed,
                     modifier = Modifier.size(16.dp)
                 )
+            }
+
+            // Close / Deselect
+            IconButton(
+                onClick = onDismissSelection,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Deselect",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            if (showCoordinatesDialog) {
+                EditCoordinatesDialog(
+                    drawing = selectedDrawing,
+                    onSave = {
+                        onUpdateDrawing(it)
+                        showCoordinatesDialog = false
+                    },
+                    onDismiss = { showCoordinatesDialog = false }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EditCoordinatesDialog(
+    drawing: DrawingItem,
+    onSave: (DrawingItem) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var price1 by remember { mutableStateOf(drawing.points.getOrNull(0)?.price?.toString() ?: "") }
+    var price2 by remember { mutableStateOf(drawing.points.getOrNull(1)?.price?.toString() ?: "") }
+    var price3 by remember { mutableStateOf(drawing.points.getOrNull(2)?.price?.toString() ?: "") }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkSurface),
+            border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    text = "Edit Coordinates (${drawing.toolType.title})",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (drawing.points.isNotEmpty()) {
+                    Text("Point 1 Price", fontSize = 11.sp, color = TextSecondary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = price1,
+                        onValueChange = { price1 = it },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = TVBlue,
+                            unfocusedBorderColor = DarkBorder,
+                            focusedContainerColor = DarkSurfaceVariant,
+                            unfocusedContainerColor = DarkSurfaceVariant
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (drawing.points.size >= 2) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Point 2 Price", fontSize = 11.sp, color = TextSecondary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = price2,
+                        onValueChange = { price2 = it },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = TVBlue,
+                            unfocusedBorderColor = DarkBorder,
+                            focusedContainerColor = DarkSurfaceVariant,
+                            unfocusedContainerColor = DarkSurfaceVariant
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (drawing.points.size >= 3) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Point 3 Price", fontSize = 11.sp, color = TextSecondary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = price3,
+                        onValueChange = { price3 = it },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = TVBlue,
+                            unfocusedBorderColor = DarkBorder,
+                            focusedContainerColor = DarkSurfaceVariant,
+                            unfocusedContainerColor = DarkSurfaceVariant
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceVariant),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Cancel", color = TextSecondary)
+                    }
+                    Button(
+                        onClick = {
+                            val newPoints = drawing.points.toMutableList()
+                            val p1Val = price1.toDoubleOrNull()
+                            if (p1Val != null && newPoints.isNotEmpty()) {
+                                newPoints[0] = newPoints[0].copy(price = p1Val)
+                            }
+                            val p2Val = price2.toDoubleOrNull()
+                            if (p2Val != null && newPoints.size >= 2) {
+                                newPoints[1] = newPoints[1].copy(price = p2Val)
+                            }
+                            val p3Val = price3.toDoubleOrNull()
+                            if (p3Val != null && newPoints.size >= 3) {
+                                newPoints[2] = newPoints[2].copy(price = p3Val)
+                            }
+                            onSave(drawing.copy(points = newPoints))
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = TVBlue),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Apply", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
     }
