@@ -135,13 +135,43 @@ fun AlertsDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Status Banner
+                Card(
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(containerColor = DarkBackground),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BullGreen.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(BullGreen)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Background Monitoring Active (Audio & Foreground Service)",
+                            fontSize = 11.sp,
+                            color = BullGreen,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 if (!isCreating) {
                     // Create New Alert Button
                     Button(
                         onClick = {
                             targetPriceInput = if (currentPrice > 0) currentPrice.toString() else ""
+                            noteInput = ""
                             isCreating = true
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = TVBlue),
@@ -265,6 +295,25 @@ fun AlertsDialog(
                         }
                     }
 
+                    // Condition Explanation Helper
+                    val conditionExplanation = when (selectedCondition) {
+                        AlertCondition.REACHES -> "Triggers instantly when live price reaches or passes target level"
+                        AlertCondition.CROSSES_ABOVE -> "Triggers when price crosses above the target level"
+                        AlertCondition.CROSSES_BELOW -> "Triggers when price crosses below the target level"
+                        AlertCondition.CANDLE_CLOSE_ABOVE -> "Triggers when candlestick period officially closes above target"
+                        AlertCondition.CANDLE_CLOSE_BELOW -> "Triggers when candlestick period officially closes below target"
+                        AlertCondition.HORIZONTAL_LINE_TOUCH -> "Triggers when price wicks touch the horizontal level"
+                        AlertCondition.HORIZONTAL_LINE_BREAKOUT -> "Triggers when price breaks through the horizontal level"
+                        AlertCondition.TRENDLINE_TOUCH -> "Triggers when price tests or interacts with your trendline"
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "💡 $conditionExplanation",
+                        fontSize = 11.sp,
+                        color = BinanceGold,
+                        lineHeight = 14.sp
+                    )
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Sound Dropdown + Test Sound Button
@@ -339,6 +388,32 @@ fun AlertsDialog(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Note / Strategy Input
+                    Text(
+                        text = "NOTE / STRATEGY (OPTIONAL)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    OutlinedTextField(
+                        value = noteInput,
+                        onValueChange = { noteInput = it },
+                        placeholder = { Text("e.g. TP1, Support bounce, Breakout entry", color = TextSecondary.copy(alpha = 0.5f), fontSize = 12.sp) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = TVBlue,
+                            unfocusedBorderColor = DarkBorder,
+                            focusedContainerColor = DarkBackground,
+                            unfocusedContainerColor = DarkBackground
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Actions
@@ -404,6 +479,13 @@ private fun AlertRowItem(
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold
             )
+            if (alert.note.isNotBlank()) {
+                Text(
+                    text = "Note: ${alert.note}",
+                    color = BinanceGold,
+                    fontSize = 11.sp
+                )
+            }
             Text(
                 text = "Sound: ${alert.soundType.displayName}" +
                         if (alert.triggeredAt != null) " (Triggered)" else "",

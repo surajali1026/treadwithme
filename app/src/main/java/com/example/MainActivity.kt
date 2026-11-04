@@ -53,6 +53,8 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -330,7 +332,12 @@ fun TradingPlatformScreen(viewModel: MainViewModel) {
 
                         // Drawing Toolbar toggle
                         IconButton(
-                            onClick = { isDrawingToolbarOpen = !isDrawingToolbarOpen },
+                            onClick = {
+                                if (isDrawingToolbarOpen) {
+                                    viewModel.setActiveDrawingTool(DrawingToolType.CURSOR)
+                                }
+                                isDrawingToolbarOpen = !isDrawingToolbarOpen
+                            },
                             modifier = Modifier.size(34.dp)
                         ) {
                             Icon(
@@ -801,6 +808,7 @@ fun TradingPlatformScreen(viewModel: MainViewModel) {
                         circularSelectorOffset = touchOffset
                         showCircularSelector = true
                     },
+                    onResetToolToCursor = { viewModel.setActiveDrawingTool(DrawingToolType.CURSOR) },
                     modifier = Modifier.fillMaxSize().testTag("candlestick_chart")
                 )
 
@@ -937,6 +945,27 @@ fun TradingPlatformScreen(viewModel: MainViewModel) {
                     onOpenCustomDialog = { showCustomTimeframeDialog = true },
                     onDismiss = { showCircularSelector = false }
                 )
+
+                // 8. RESTORED FLOATING PLUS (+) BUTTON FOR QUICK ALERTS
+                FloatingActionButton(
+                    onClick = { showAlertsDialog = true },
+                    containerColor = TVBlue,
+                    contentColor = Color.White,
+                    shape = CircleShape,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 65.dp, bottom = 42.dp)
+                        .size(48.dp)
+                        .testTag("floating_add_alert_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add Alert",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
 
         }

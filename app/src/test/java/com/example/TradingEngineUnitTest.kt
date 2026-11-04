@@ -86,6 +86,74 @@ class TradingEngineUnitTest {
     }
 
     @Test
+    fun testAlertEngine_triggersPriceCrossesBelow() {
+        var triggered = false
+        val engine = AlertEngine { _, _ -> triggered = true }
+        val alert = AlertItem(symbol = "ETHUSDT", targetPrice = 2000.0, condition = AlertCondition.CROSSES_BELOW)
+
+        engine.checkPrice("ETHUSDT", 2050.0, listOf(alert), null)
+        assertFalse(triggered)
+
+        engine.checkPrice("ETHUSDT", 1995.0, listOf(alert), null)
+        assertTrue(triggered)
+    }
+
+    @Test
+    fun testAlertEngine_triggersReachesAndHorizontalTouch() {
+        var reachesTriggered = false
+        val engine1 = AlertEngine { _, _ -> reachesTriggered = true }
+        val alert1 = AlertItem(symbol = "SOLUSDT", targetPrice = 150.0, condition = AlertCondition.REACHES)
+
+        engine1.checkPrice("SOLUSDT", 140.0, listOf(alert1), null)
+        assertFalse(reachesTriggered)
+        engine1.checkPrice("SOLUSDT", 150.02, listOf(alert1), null) // Within 0.05% threshold
+        assertTrue(reachesTriggered)
+
+        var touchTriggered = false
+        val engine2 = AlertEngine { _, _ -> touchTriggered = true }
+        val alert2 = AlertItem(symbol = "SOLUSDT", targetPrice = 150.0, condition = AlertCondition.HORIZONTAL_LINE_TOUCH)
+
+        engine2.checkPrice("SOLUSDT", 145.0, listOf(alert2), null)
+        assertFalse(touchTriggered)
+        engine2.checkPrice("SOLUSDT", 150.0, listOf(alert2), null)
+        assertTrue(touchTriggered)
+    }
+
+    @Test
+    fun testAlertEngine_triggersBreakoutAndTrendlineTouch() {
+        var breakoutTriggered = false
+        val engine1 = AlertEngine { _, _ -> breakoutTriggered = true }
+        val alert1 = AlertItem(symbol = "BNBUSDT", targetPrice = 600.0, condition = AlertCondition.HORIZONTAL_LINE_BREAKOUT)
+
+        engine1.checkPrice("BNBUSDT", 595.0, listOf(alert1), null)
+        assertFalse(breakoutTriggered)
+        engine1.checkPrice("BNBUSDT", 605.0, listOf(alert1), null)
+        assertTrue(breakoutTriggered)
+
+        var trendlineTriggered = false
+        val engine2 = AlertEngine { _, _ -> trendlineTriggered = true }
+        val alert2 = AlertItem(symbol = "BNBUSDT", targetPrice = 600.0, condition = AlertCondition.TRENDLINE_TOUCH)
+
+        engine2.checkPrice("BNBUSDT", 600.1, listOf(alert2), null)
+        assertTrue(trendlineTriggered)
+    }
+
+    @Test
+    fun testAlertEngine_triggersCandleCloseAbove() {
+        var triggered = false
+        val engine = AlertEngine { _, _ -> triggered = true }
+        val alert = AlertItem(symbol = "BTCUSDT", targetPrice = 70000.0, condition = AlertCondition.CANDLE_CLOSE_ABOVE)
+
+        val openCandle = Candle(openTime = 0L, open = 69000.0, high = 71000.0, low = 68000.0, close = 70500.0, volume = 50.0, isClosed = false)
+        engine.checkCandleClose("BTCUSDT", openCandle, listOf(alert), null)
+        assertFalse(triggered)
+
+        val closedCandle = openCandle.copy(isClosed = true)
+        engine.checkCandleClose("BTCUSDT", closedCandle, listOf(alert), null)
+        assertTrue(triggered)
+    }
+
+    @Test
     fun testCustomTimeframe_creation() {
         val tf = Timeframe.createCustom(45, TimeUnit.MINUTES)
         assertEquals("45m", tf.displayName)
