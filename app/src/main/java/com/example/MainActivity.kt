@@ -81,6 +81,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.AlertItem
 import com.example.data.model.CandlePriceSource
 import com.example.data.model.DrawingToolType
 import com.example.data.model.Timeframe
@@ -205,6 +206,20 @@ fun TradingPlatformScreen(viewModel: MainViewModel) {
     var showAlertsDialog by remember { mutableStateOf(false) }
     var showCustomTimeframeDialog by remember { mutableStateOf(false) }
     var isDrawingToolbarOpen by remember { mutableStateOf(false) }
+
+    // Interactive (+) Price Line & Quick Alert States
+    var isPriceLineActive by remember { mutableStateOf(false) }
+    var alertTargetPrice by remember { mutableStateOf<Double?>(null) }
+    var alertToEdit by remember { mutableStateOf<AlertItem?>(null) }
+
+    // Real-Time Candle Countdown Ticker
+    var currentTimeMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTimeMs = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1000L)
+        }
+    }
 
     // Circular Timeframe Selector state
     var showCircularSelector by remember { mutableStateOf(false) }
@@ -743,6 +758,57 @@ fun TradingPlatformScreen(viewModel: MainViewModel) {
                 }
             } // End of if (!isFullscreen)
 
+            // 3.5. REAL-TIME CANDLE COUNTDOWN TIMER (Below price information area, synced with server candle timestamps)
+            if (!isFullscreen && candles.isNotEmpty()) {
+                val latestCandle = candles.lastOrNull()
+                val candleEndMs = (latestCandle?.openTime ?: 0L) + currentTimeframe.durationMs
+                val remainingMs = (candleEndMs - currentTimeMs).coerceAtLeast(0L)
+                val totalSec = remainingMs / 1000L
+                val hours = totalSec / 3600L
+                val minutes = (totalSec % 3600L) / 60L
+                val seconds = totalSec % 60L
+                val countdownFormatted = if (hours > 0) {
+                    String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
+                } else {
+                    String.format(Locale.US, "%02d:%02d", minutes, seconds)
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(24.dp)
+                        .background(DarkBackground)
+                        .border(0.5.dp, DarkBorder)
+                        .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "${currentTimeframe.displayName}: ",
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = countdownFormatted,
+                            color = TVBlue,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    if (isPriceLineActive) {
+                        Text(
+                            text = "Tap chart or line to set alert (+)",
+                            color = BinanceGold,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
             // 4. BAR REPLAY BANNER / SELECTION PROMPT
             if (isSelectingReplayCandle) {
                 Box(
@@ -809,6 +875,18 @@ fun TradingPlatformScreen(viewModel: MainViewModel) {
                         showCircularSelector = true
                     },
                     onResetToolToCursor = { viewModel.setActiveDrawingTool(DrawingToolType.CURSOR) },
+                    onAddAlertAtPrice = { price ->
+                        alertTargetPrice = price
+                        alertToEdit = null
+                        showAlertsDialog = true
+                    },
+                    onEditAlert = { alert ->
+                        alertToEdit = alert
+                        alertTargetPrice = null
+                        showAlertsDialog = true
+                    },
+                    isPriceLineActive = isPriceLineActive,
+                    onDeactivatePriceLine = { isPriceLineActive = false },
                     modifier = Modifier.fillMaxSize().testTag("candlestick_chart")
                 )
 
@@ -948,9 +1026,9 @@ fun TradingPlatformScreen(viewModel: MainViewModel) {
 
                 // 8. RESTORED FLOATING PLUS (+) BUTTON FOR QUICK ALERTS
                 FloatingActionButton(
-                    onClick = { showAlertsDialog = true },
-                    containerColor = TVBlue,
-                    contentColor = Color.White,
+                    onClick = { isPriceLineActive = !isPriceLineActive },
+                    containerColor = if (isPriceLineActive) BinanceGold else TVBlue,
+                    contentColor = if (isPriceLineActive) Color.Black else Color.White,
                     shape = CircleShape,
                     elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
                     modifier = Modifier
@@ -962,7 +1040,7 @@ fun TradingPlatformScreen(viewModel: MainViewModel) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Add Alert",
-                        tint = Color.White,
+                        tint = if (isPriceLineActive) Color.Black else Color.White,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -1014,10 +1092,16 @@ fun TradingPlatformScreen(viewModel: MainViewModel) {
                 symbol = currentSymbol,
                 currentPrice = lastPrice,
                 alerts = alerts,
+                initialTargetPrice = alertTargetPrice,
+                editingAlert = alertToEdit,
                 onAddAlert = { viewModel.addAlert(it) },
                 onDeleteAlert = { viewModel.deleteAlert(it) },
                 onToggleAlert = { id, active -> viewModel.toggleAlert(id, active) },
-                onDismiss = { showAlertsDialog = false }
+                onDismiss = {
+                    showAlertsDialog = false
+                    alertTargetPrice = null
+                    alertToEdit = null
+                }
             )
         }
     }

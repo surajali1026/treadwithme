@@ -75,18 +75,32 @@ fun AlertsDialog(
     symbol: String,
     currentPrice: Double,
     alerts: List<AlertItem>,
+    initialTargetPrice: Double? = null,
+    editingAlert: AlertItem? = null,
     onAddAlert: (AlertItem) -> Unit,
     onDeleteAlert: (String) -> Unit,
     onToggleAlert: (String, Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    var isCreating by remember { mutableStateOf(false) }
+    var isCreating by remember { mutableStateOf(initialTargetPrice != null || editingAlert != null) }
 
-    var targetPriceInput by remember { mutableStateOf(if (currentPrice > 0) currentPrice.toString() else "") }
-    var selectedCondition by remember { mutableStateOf(AlertCondition.CROSSES_ABOVE) }
-    var selectedSound by remember { mutableStateOf(AlertSoundType.RADAR_PING) }
-    var noteInput by remember { mutableStateOf("") }
+    var targetPriceInput by remember(initialTargetPrice, editingAlert) {
+        mutableStateOf(
+            editingAlert?.targetPrice?.toString()
+                ?: initialTargetPrice?.let { String.format(java.util.Locale.US, if (it >= 1.0) "%.2f" else "%.6f", it) }
+                ?: if (currentPrice > 0) currentPrice.toString() else ""
+        )
+    }
+    var selectedCondition by remember(editingAlert) {
+        mutableStateOf(editingAlert?.condition ?: AlertCondition.CROSSES_ABOVE)
+    }
+    var selectedSound by remember(editingAlert) {
+        mutableStateOf(editingAlert?.soundType ?: AlertSoundType.RADAR_PING)
+    }
+    var noteInput by remember(editingAlert) {
+        mutableStateOf(editingAlert?.note ?: "")
+    }
 
     var conditionMenuExpanded by remember { mutableStateOf(false) }
     var soundMenuExpanded by remember { mutableStateOf(false) }
@@ -215,6 +229,13 @@ fun AlertsDialog(
                             items(symbolAlerts, key = { it.id }) { alert ->
                                 AlertRowItem(
                                     alert = alert,
+                                    onEdit = {
+                                        targetPriceInput = alert.targetPrice.toString()
+                                        selectedCondition = alert.condition
+                                        selectedSound = alert.soundType
+                                        noteInput = alert.note
+                                        isCreating = true
+                                    },
                                     onToggle = { onToggleAlert(alert.id, it) },
                                     onDelete = { onDeleteAlert(alert.id) }
                                 )
@@ -434,6 +455,7 @@ fun AlertsDialog(
                                 val price = targetPriceInput.toDoubleOrNull()
                                 if (price != null && price > 0.0) {
                                     val alert = AlertItem(
+                                        id = editingAlert?.id ?: java.util.UUID.randomUUID().toString(),
                                         symbol = symbol,
                                         targetPrice = price,
                                         condition = selectedCondition,
@@ -442,12 +464,15 @@ fun AlertsDialog(
                                     )
                                     onAddAlert(alert)
                                     isCreating = false
+                                    if (initialTargetPrice != null || editingAlert != null) {
+                                        onDismiss()
+                                    }
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = TVBlue),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Save Alert", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(if (editingAlert != null) "Update Alert" else "Save Alert", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -459,6 +484,7 @@ fun AlertsDialog(
 @Composable
 private fun AlertRowItem(
     alert: AlertItem,
+    onEdit: () -> Unit = {},
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit
 ) {
@@ -468,6 +494,7 @@ private fun AlertRowItem(
             .clip(RoundedCornerShape(8.dp))
             .background(DarkBackground)
             .border(1.dp, DarkBorder, RoundedCornerShape(8.dp))
+            .clickable { onEdit() }
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
