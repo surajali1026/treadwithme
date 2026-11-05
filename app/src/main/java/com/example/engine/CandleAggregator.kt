@@ -144,6 +144,44 @@ object CandleAggregator {
             return mutable
         }
 
+        if (timeframe.isSeconds) {
+            val bucketDurationMs = timeframe.durationMs
+            val now = System.currentTimeMillis()
+            val currentBucketStart = (now / bucketDurationMs) * bucketDurationMs
+            val mutable = currentList.toMutableList()
+            val lastIdx = mutable.lastIndex
+
+            if (lastIdx >= 0 && mutable[lastIdx].openTime == currentBucketStart) {
+                val curr = mutable[lastIdx]
+                mutable[lastIdx] = curr.copy(
+                    high = maxOf(curr.high, liveBaseCandle.close),
+                    low = minOf(curr.low, liveBaseCandle.close),
+                    close = liveBaseCandle.close,
+                    volume = curr.volume + (liveBaseCandle.volume / 60.0),
+                    isClosed = false
+                )
+            } else {
+                val prevClose = if (lastIdx >= 0) mutable[lastIdx].close else liveBaseCandle.open
+                if (lastIdx >= 0) {
+                    mutable[lastIdx] = mutable[lastIdx].copy(isClosed = true)
+                }
+                mutable.add(
+                    Candle(
+                        openTime = currentBucketStart,
+                        open = prevClose,
+                        high = maxOf(prevClose, liveBaseCandle.close),
+                        low = minOf(prevClose, liveBaseCandle.close),
+                        close = liveBaseCandle.close,
+                        volume = liveBaseCandle.volume / 60.0,
+                        closeTime = currentBucketStart + bucketDurationMs - 1,
+                        quoteVolume = liveBaseCandle.quoteVolume / 60.0,
+                        isClosed = false
+                    )
+                )
+            }
+            return mutable
+        }
+
         val bucketDurationMs = timeframe.durationMs
         val bucketStart = (liveBaseCandle.openTime / bucketDurationMs) * bucketDurationMs
         val mutable = currentList.toMutableList()

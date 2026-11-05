@@ -63,6 +63,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -395,225 +396,193 @@ fun CandlestickChart(
                 )
             }
 
-            // 2. Grid lines
-            if (settings.showGrid) {
-                val numGridSteps = 7
-                val stepY = chartHeight / (numGridSteps + 1)
-                for (i in 1..numGridSteps) {
-                    val y = i * stepY
-                    drawLine(
-                        color = GridLineColor,
-                        start = Offset(chartLeft, y),
-                        end = Offset(chartRight, y),
-                        strokeWidth = 1f
-                    )
+            // Shared chart states and price calculations
+            val latestCandle = candles.lastOrNull()
+            val lastP = if (priceInfo.lastPrice > 0.0) priceInfo.lastPrice else latestCandle?.close ?: 0.0
+            val activeAlerts = alerts.filter { it.symbol.equals(symbol, ignoreCase = true) && it.isActive }
+
+            // 2. Grid lines, Volume, Candles, and User Drawings strictly clipped to the chart content viewport
+            clipRect(left = chartLeft, top = 0f, right = chartRight, bottom = chartHeight) {
+                if (settings.showGrid) {
+                    val numGridSteps = 7
+                    val stepY = chartHeight / (numGridSteps + 1)
+                    for (i in 1..numGridSteps) {
+                        val y = i * stepY
+                        drawLine(
+                            color = GridLineColor,
+                            start = Offset(chartLeft, y),
+                            end = Offset(chartRight, y),
+                            strokeWidth = 1f
+                        )
+                    }
+
+                    // Vertical time grid lines
+                    for (i in rightIndex downTo leftIndex step 10) {
+                        val dist = rightIndex - i
+                        val x = chartRight - (dist * totalSlotWidth)
+                        drawLine(
+                            color = GridLineColor,
+                            start = Offset(x, 0f),
+                            end = Offset(x, chartHeight),
+                            strokeWidth = 1f
+                        )
+                    }
                 }
 
-                // Vertical time grid lines
-                for (i in rightIndex downTo leftIndex step 10) {
-                    val dist = rightIndex - i
-                    val x = chartRight - (dist * totalSlotWidth)
-                    drawLine(
-                        color = GridLineColor,
-                        start = Offset(x, 0f),
-                        end = Offset(x, chartHeight),
-                        strokeWidth = 1f
-                    )
-                }
-            }
+                // 3. Volume Bars (Bottom ~18%)
+                if (settings.showVolume && maxVol > 0.0) {
+                    val volHeight = chartHeight * 0.18f
+                    for (i in rightIndex downTo leftIndex) {
+                        val candle = candles[i]
+                        val distFromRight = (candles.lastIndex.toFloat() - scrollOffset) - i
+                        val x = chartRight - (distFromRight * totalSlotWidth) - candleWidth
+                        val barH = ((candle.volume / maxVol) * volHeight).toFloat()
+                        val y = chartHeight - barH
 
-            // 3. Volume Bars (Bottom ~18%)
-            if (settings.showVolume && maxVol > 0.0) {
-                val volHeight = chartHeight * 0.18f
+                        val volColor = if (candle.isBullish)
+                            BullGreen.copy(alpha = 0.3f)
+                        else
+                            BearRed.copy(alpha = 0.3f)
+
+                        drawRect(
+                            color = volColor,
+                            topLeft = Offset(x, y),
+                            size = Size(candleWidth, barH)
+                        )
+                    }
+                }
+
+                // 4. Candlesticks
                 for (i in rightIndex downTo leftIndex) {
                     val candle = candles[i]
                     val distFromRight = (candles.lastIndex.toFloat() - scrollOffset) - i
                     val x = chartRight - (distFromRight * totalSlotWidth) - candleWidth
-                    val barH = ((candle.volume / maxVol) * volHeight).toFloat()
-                    val y = chartHeight - barH
+                    val centerX = x + candleWidth / 2f
 
-                    val volColor = if (candle.isBullish)
-                        BullGreen.copy(alpha = 0.3f)
-                    else
-                        BearRed.copy(alpha = 0.3f)
+                    val openY = priceToY(candle.open)
+                    val closeY = priceToY(candle.close)
+                    val highY = priceToY(candle.high)
+                    val lowY = priceToY(candle.low)
+
+                    val candleColor = if (candle.isBullish) BullGreen else BearRed
+
+                    // Wick
+                    drawLine(
+                        color = candleColor,
+                        start = Offset(centerX, highY),
+                        end = Offset(centerX, lowY),
+                        strokeWidth = 1.5f
+                    )
+
+                    // Body
+                    val bodyTop = min(openY, closeY)
+                    val bodyBottom = max(openY, closeY)
+                    val bodyH = (bodyBottom - bodyTop).coerceAtLeast(1.5f)
 
                     drawRect(
-                        color = volColor,
-                        topLeft = Offset(x, y),
-                        size = Size(candleWidth, barH)
-                    )
-                }
-            }
-
-            // 4. Candlesticks
-            for (i in rightIndex downTo leftIndex) {
-                val candle = candles[i]
-                val distFromRight = (candles.lastIndex.toFloat() - scrollOffset) - i
-                val x = chartRight - (distFromRight * totalSlotWidth) - candleWidth
-                val centerX = x + candleWidth / 2f
-
-                val openY = priceToY(candle.open)
-                val closeY = priceToY(candle.close)
-                val highY = priceToY(candle.high)
-                val lowY = priceToY(candle.low)
-
-                val candleColor = if (candle.isBullish) BullGreen else BearRed
-
-                // Wick
-                drawLine(
-                    color = candleColor,
-                    start = Offset(centerX, highY),
-                    end = Offset(centerX, lowY),
-                    strokeWidth = 1.5f
-                )
-
-                // Body
-                val bodyTop = min(openY, closeY)
-                val bodyBottom = max(openY, closeY)
-                val bodyH = (bodyBottom - bodyTop).coerceAtLeast(1.5f)
-
-                drawRect(
-                    color = candleColor,
-                    topLeft = Offset(x, bodyTop),
-                    size = Size(candleWidth, bodyH)
-                )
-            }
-
-            // 5. Draw User Drawings
-            if (!areDrawingsHidden) {
-                for (drawing in drawings) {
-                    drawDrawingItem(
-                        drawing = drawing,
-                        isSelected = drawing.id == selectedDrawing?.id,
-                        candles = candles,
-                        rightIndex = rightIndex,
-                        totalSlotWidth = totalSlotWidth,
-                        candleWidth = candleWidth,
-                        chartRight = chartRight,
-                        chartLeft = chartLeft,
-                        chartWidth = chartWidth,
-                        chartHeight = chartHeight,
-                        priceToY = ::priceToY,
-                        timeToX = ::timeToX
+                        color = candleColor,
+                        topLeft = Offset(x, bodyTop),
+                        size = Size(candleWidth, bodyH)
                     )
                 }
 
-                // In-progress drawing preview
-                if (inProgressPoints.isNotEmpty()) {
-                    drawInProgressDrawing(
-                        tool = activeDrawingTool,
-                        points = inProgressPoints,
-                        candles = candles,
-                        rightIndex = rightIndex,
-                        totalSlotWidth = totalSlotWidth,
-                        chartRight = chartRight,
-                        priceToY = ::priceToY,
-                        timeToX = ::timeToX
-                    )
+                // 5. Draw User Drawings
+                if (!areDrawingsHidden) {
+                    for (drawing in drawings) {
+                        drawDrawingItem(
+                            drawing = drawing,
+                            isSelected = drawing.id == selectedDrawing?.id,
+                            candles = candles,
+                            rightIndex = rightIndex,
+                            totalSlotWidth = totalSlotWidth,
+                            candleWidth = candleWidth,
+                            chartRight = chartRight,
+                            chartLeft = chartLeft,
+                            chartWidth = chartWidth,
+                            chartHeight = chartHeight,
+                            priceToY = ::priceToY,
+                            timeToX = ::timeToX
+                        )
+                    }
+
+                    // In-progress drawing preview
+                    if (inProgressPoints.isNotEmpty()) {
+                        drawInProgressDrawing(
+                            tool = activeDrawingTool,
+                            points = inProgressPoints,
+                            candles = candles,
+                            rightIndex = rightIndex,
+                            totalSlotWidth = totalSlotWidth,
+                            chartRight = chartRight,
+                            priceToY = ::priceToY,
+                            timeToX = ::timeToX
+                        )
+                    }
                 }
-            }
 
-            // 6. Alert Lines (clean horizontal alert line, no text clutter)
-            val activeAlerts = alerts.filter { it.symbol.equals(symbol, ignoreCase = true) && it.isActive }
-            for (alert in activeAlerts) {
-                val alertY = priceToY(alert.targetPrice)
-                if (alertY in 0f..chartHeight) {
-                    drawLine(
-                        color = AlertLineColor,
-                        start = Offset(chartLeft, alertY),
-                        end = Offset(chartRight, alertY),
-                        strokeWidth = 1.8f,
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
-                    )
-                    // Bell / price indicator on scale
-                    val scaleX = if (isRightScale) chartRight else 0f
-                    drawRect(
-                        color = AlertLineColor,
-                        topLeft = Offset(scaleX, alertY - 10f),
-                        size = Size(priceScaleWidth, 20f)
-                    )
-                    drawContext.canvas.nativeCanvas.drawText(
-                        formatPriceLabel(alert.targetPrice, settings, basePrice),
-                        scaleX + priceScaleWidth / 2f,
-                        alertY + 4f,
-                        alertScalePaint
-                    )
+                // 6. Alert Lines (dashed line strictly on chart canvas)
+                val activeAlerts = alerts.filter { it.symbol.equals(symbol, ignoreCase = true) && it.isActive }
+                for (alert in activeAlerts) {
+                    val alertY = priceToY(alert.targetPrice)
+                    if (alertY in 0f..chartHeight) {
+                        drawLine(
+                            color = AlertLineColor,
+                            start = Offset(chartLeft, alertY),
+                            end = Offset(chartRight, alertY),
+                            strokeWidth = 1.8f,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
+                        )
+                    }
                 }
-            }
 
-            // 7. Live Price Lines (Last, Mark, Index)
-            val latestCandle = candles.lastOrNull()
-            val lastP = if (priceInfo.lastPrice > 0.0) priceInfo.lastPrice else latestCandle?.close ?: 0.0
-
-            // Mark Price line
-            if (settings.showMarkPrice && priceInfo.markPrice > 0.0) {
-                val markY = priceToY(priceInfo.markPrice)
-                if (markY in 0f..chartHeight) {
-                    drawLine(
-                        color = MarkPriceCyan.copy(alpha = 0.7f),
-                        start = Offset(chartLeft, markY),
-                        end = Offset(chartRight, markY),
-                        strokeWidth = 1f,
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
-                    )
+                // 7. Live Price Lines (Mark, Index, Active Price)
+                if (settings.showMarkPrice && priceInfo.markPrice > 0.0) {
+                    val markY = priceToY(priceInfo.markPrice)
+                    if (markY in 0f..chartHeight) {
+                        drawLine(
+                            color = MarkPriceCyan.copy(alpha = 0.7f),
+                            start = Offset(chartLeft, markY),
+                            end = Offset(chartRight, markY),
+                            strokeWidth = 1f,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                        )
+                    }
                 }
-            }
 
-            // Index Price line
-            if (settings.showIndexPrice && priceInfo.indexPrice > 0.0) {
-                val indexY = priceToY(priceInfo.indexPrice)
-                if (indexY in 0f..chartHeight) {
-                    drawLine(
-                        color = IndexPricePurple.copy(alpha = 0.7f),
-                        start = Offset(chartLeft, indexY),
-                        end = Offset(chartRight, indexY),
-                        strokeWidth = 1f,
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f), 0f)
-                    )
+                if (settings.showIndexPrice && priceInfo.indexPrice > 0.0) {
+                    val indexY = priceToY(priceInfo.indexPrice)
+                    if (indexY in 0f..chartHeight) {
+                        drawLine(
+                            color = IndexPricePurple.copy(alpha = 0.7f),
+                            start = Offset(chartLeft, indexY),
+                            end = Offset(chartRight, indexY),
+                            strokeWidth = 1f,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f), 0f)
+                        )
+                    }
                 }
-            }
 
-            // Active Candle Price Line (Last, Mark, or Index depending on active candlePriceSource)
-            val activeP = when (candlePriceSource) {
-                CandlePriceSource.LAST -> lastP
-                CandlePriceSource.MARK -> if (priceInfo.markPrice > 0) priceInfo.markPrice else latestCandle?.close ?: 0.0
-                CandlePriceSource.INDEX -> if (priceInfo.indexPrice > 0) priceInfo.indexPrice else latestCandle?.close ?: 0.0
-            }
-
-            if (activeP > 0.0) {
-                val activeY = priceToY(activeP)
-                val lineColor = when (candlePriceSource) {
-                    CandlePriceSource.MARK -> MarkPriceCyan
-                    CandlePriceSource.INDEX -> IndexPricePurple
-                    CandlePriceSource.LAST -> if (latestCandle?.isBullish == true) BullGreen else BearRed
+                val activeP = when (candlePriceSource) {
+                    CandlePriceSource.LAST -> lastP
+                    CandlePriceSource.MARK -> if (priceInfo.markPrice > 0) priceInfo.markPrice else latestCandle?.close ?: 0.0
+                    CandlePriceSource.INDEX -> if (priceInfo.indexPrice > 0) priceInfo.indexPrice else latestCandle?.close ?: 0.0
                 }
-                if (activeY in 0f..chartHeight) {
-                    drawLine(
-                        color = lineColor,
-                        start = Offset(chartLeft, activeY),
-                        end = Offset(chartRight, activeY),
-                        strokeWidth = 1.5f,
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
-                    )
-
-                    // Price Scale Pill
-                    val scaleX = if (isRightScale) chartRight else 0f
-                    drawRect(
-                        color = lineColor,
-                        topLeft = Offset(scaleX, activeY - 12f),
-                        size = Size(priceScaleWidth, 24f)
-                    )
-                    drawContext.canvas.nativeCanvas.drawText(
-                        formatPriceLabel(activeP, settings, basePrice),
-                        scaleX + priceScaleWidth / 2f,
-                        activeY + 5f,
-                        Paint().apply {
-                            color = if (candlePriceSource == CandlePriceSource.MARK) Color.Black.toArgb() else Color.White.toArgb()
-                            textSize = 22f
-                            typeface = Typeface.DEFAULT_BOLD
-                            textAlign = Paint.Align.CENTER
-                        }
-                    )
+                if (activeP > 0.0) {
+                    val activeY = priceToY(activeP)
+                    val lineColor = when (candlePriceSource) {
+                        CandlePriceSource.MARK -> MarkPriceCyan
+                        CandlePriceSource.INDEX -> IndexPricePurple
+                        CandlePriceSource.LAST -> if (latestCandle?.isBullish == true) BullGreen else BearRed
+                    }
+                    if (activeY in 0f..chartHeight) {
+                        drawLine(
+                            color = lineColor,
+                            start = Offset(chartLeft, activeY),
+                            end = Offset(chartRight, activeY),
+                            strokeWidth = 1.5f,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
+                        )
+                    }
                 }
             }
 
@@ -644,6 +613,58 @@ fun CandlestickChart(
                     y + 4f,
                     scaleTextPaint
                 )
+            }
+
+            // Alert indicators on Price Scale
+            val scaleX = if (isRightScale) chartRight else 0f
+            for (alert in activeAlerts) {
+                val alertY = priceToY(alert.targetPrice)
+                if (alertY in 0f..chartHeight) {
+                    drawRect(
+                        color = AlertLineColor,
+                        topLeft = Offset(scaleX, alertY - 10f),
+                        size = Size(priceScaleWidth, 20f)
+                    )
+                    drawContext.canvas.nativeCanvas.drawText(
+                        formatPriceLabel(alert.targetPrice, settings, basePrice),
+                        scaleX + priceScaleWidth / 2f,
+                        alertY + 4f,
+                        alertScalePaint
+                    )
+                }
+            }
+
+            // Active Price Indicator Pill on Price Scale
+            val activePillPrice = when (candlePriceSource) {
+                CandlePriceSource.LAST -> lastP
+                CandlePriceSource.MARK -> if (priceInfo.markPrice > 0) priceInfo.markPrice else latestCandle?.close ?: 0.0
+                CandlePriceSource.INDEX -> if (priceInfo.indexPrice > 0) priceInfo.indexPrice else latestCandle?.close ?: 0.0
+            }
+            if (activePillPrice > 0.0) {
+                val pillY = priceToY(activePillPrice)
+                val pillColor = when (candlePriceSource) {
+                    CandlePriceSource.MARK -> MarkPriceCyan
+                    CandlePriceSource.INDEX -> IndexPricePurple
+                    CandlePriceSource.LAST -> if (latestCandle?.isBullish == true) BullGreen else BearRed
+                }
+                if (pillY in 0f..chartHeight) {
+                    drawRect(
+                        color = pillColor,
+                        topLeft = Offset(scaleX, pillY - 12f),
+                        size = Size(priceScaleWidth, 24f)
+                    )
+                    drawContext.canvas.nativeCanvas.drawText(
+                        formatPriceLabel(activePillPrice, settings, basePrice),
+                        scaleX + priceScaleWidth / 2f,
+                        pillY + 5f,
+                        Paint().apply {
+                            color = if (candlePriceSource == CandlePriceSource.MARK) Color.Black.toArgb() else Color.White.toArgb()
+                            textSize = 22f
+                            typeface = Typeface.DEFAULT_BOLD
+                            textAlign = Paint.Align.CENTER
+                        }
+                    )
+                }
             }
 
             // 9. Time Scale Axis (Bottom)
@@ -1200,7 +1221,7 @@ fun CandlestickChart(
                                             return effMinP + norm.toDouble() * scaledRange
                                         }
 
-                                        if (currDrawing != null && !areDrawingsHidden) {
+                                        if (currDrawing != null && !areDrawingsHidden && !currDrawing.isLocked) {
                                             val handles = getDrawingHandles(currDrawing, ::tToX, ::pToY, 0f, chartW, chartH)
                                             val hitIdx = handles.indexOfFirst { (it - startPos).getDistance() <= 38f }
                                             if (hitIdx >= 0) {
@@ -1715,9 +1736,10 @@ private fun DrawScope.drawDrawingItem(
 
     if (isSelected) {
         val handles = getDrawingHandles(drawing, timeToX, priceToY, chartLeft, chartRight, chartHeight)
+        val handleColor = if (drawing.isLocked) BinanceGold else TVBlue
         for (h in handles) {
-            drawCircle(color = TVBlue.copy(alpha = 0.35f), radius = 11f, center = h)
-            drawCircle(color = TVBlue, radius = 7f, center = h)
+            drawCircle(color = handleColor.copy(alpha = 0.35f), radius = 11f, center = h)
+            drawCircle(color = handleColor, radius = 7f, center = h)
             drawCircle(color = Color.White, radius = 3.5f, center = h)
         }
     }
