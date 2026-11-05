@@ -95,6 +95,7 @@ import com.example.ui.theme.MarkPriceCyan
 import com.example.ui.theme.TVBlue
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -124,10 +125,6 @@ fun CandlestickChart(
     onSelectCandleForReplay: ((Int) -> Unit)? = null,
     onOpenCircularTimeframe: (Offset) -> Unit,
     onResetToolToCursor: () -> Unit = {},
-    onAddAlertAtPrice: (Double) -> Unit = {},
-    onEditAlert: (AlertItem) -> Unit = {},
-    isPriceLineActive: Boolean = false,
-    onDeactivatePriceLine: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Chart view state: horizontal pan (scrollOffset in candles), zoom (candleWidth in pixels)
@@ -217,31 +214,32 @@ fun CandlestickChart(
     var crosshairPos by remember { mutableStateOf<Offset?>(null) }
     var hoveredCandle by remember { mutableStateOf<Candle?>(null) }
 
-    // Active drawing in-progress points
-    val inProgressPoints = remember { mutableStateListOf<ChartPoint>() }
-
-    // Interactive TradingView-Style Plus (+) Price Line State
-    var activePriceLinePrice by remember { mutableStateOf<Double?>(null) }
-    var isPriceLineFixed by remember { mutableStateOf(false) }
-
-    // When isPriceLineActive prop changes to true, activate price line at current price
-    LaunchedEffect(isPriceLineActive) {
-        if (isPriceLineActive) {
-            val initP = if (priceInfo.lastPrice > 0) priceInfo.lastPrice else candles.lastOrNull()?.close ?: 0.0
-            activePriceLinePrice = initP
-            isPriceLineFixed = false
-        } else {
-            activePriceLinePrice = null
-            isPriceLineFixed = false
-        }
-    }
-
-    // Real-Time Candle Countdown State (updates every second, synced with server candle openTime + duration)
+    // Bar Time Countdown Ticker (updates every 500ms to stay accurately in sync)
     var currentTimeMs by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
             currentTimeMs = System.currentTimeMillis()
-            kotlinx.coroutines.delay(1000L)
+            delay(500L)
+        }
+    }
+
+    val countdownPaint = remember {
+        Paint().apply {
+            color = android.graphics.Color.WHITE
+            textSize = 18f
+            typeface = Typeface.DEFAULT_BOLD
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+        }
+    }
+
+    // Active drawing in-progress points
+    val inProgressPoints = remember { mutableStateListOf<ChartPoint>() }
+
+    // Clear any stray in-progress drawing points when switching back to CURSOR mode
+    LaunchedEffect(activeDrawingTool) {
+        if (activeDrawingTool == DrawingToolType.CURSOR) {
+            inProgressPoints.clear()
         }
     }
 
@@ -542,17 +540,17 @@ fun CandlestickChart(
                     }
                 }
 
-                // 6. Alert Lines: ONLY a thin horizontal dotted line at the alert price (subtle, light, semi-transparent, no text/labels)
+                // 6. Alert Lines (dashed line strictly on chart canvas)
                 val activeAlerts = alerts.filter { it.symbol.equals(symbol, ignoreCase = true) && it.isActive }
                 for (alert in activeAlerts) {
                     val alertY = priceToY(alert.targetPrice)
                     if (alertY in 0f..chartHeight) {
                         drawLine(
-                            color = AlertLineColor.copy(alpha = 0.55f),
+                            color = AlertLineColor,
                             start = Offset(chartLeft, alertY),
                             end = Offset(chartRight, alertY),
-                            strokeWidth = 1.0f,
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f), 0f)
+                            strokeWidth = 1.8f,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
                         )
                     }
                 }
@@ -606,40 +604,6 @@ fun CandlestickChart(
                         )
                     }
                 }
-
-                // 7.5. TradingView-Style Interactive Plus (+) Price Line (Follows touch or fixed at selected price)
-                activePriceLinePrice?.let { plPrice ->
-                    val lineY = priceToY(plPrice)
-                    if (lineY in 0f..chartHeight) {
-                        // Horizontal blue line
-                        drawLine(
-                            color = TVBlue,
-                            start = Offset(chartLeft, lineY),
-                            end = Offset(chartRight, lineY),
-                            strokeWidth = 2.0f
-                        )
-
-                        // If fixed, draw small (+) button icon anchor on the line
-                        if (isPriceLineFixed) {
-                            val btnCenterX = chartRight - 28f
-                            drawCircle(color = TVBlue, radius = 14f, center = Offset(btnCenterX, lineY))
-                            drawCircle(color = Color.White, radius = 13f, center = Offset(btnCenterX, lineY), style = Stroke(1.5f))
-                            // Draw "+" cross
-                            drawLine(
-                                color = Color.White,
-                                start = Offset(btnCenterX - 7f, lineY),
-                                end = Offset(btnCenterX + 7f, lineY),
-                                strokeWidth = 2.2f
-                            )
-                            drawLine(
-                                color = Color.White,
-                                start = Offset(btnCenterX, lineY - 7f),
-                                end = Offset(btnCenterX, lineY + 7f),
-                                strokeWidth = 2.2f
-                            )
-                        }
-                    }
-                }
             }
 
             // 8. Price Scale Axis (Labels & Background)
@@ -671,9 +635,26 @@ fun CandlestickChart(
                 )
             }
 
+            // Alert indicators on Price Scale
+            val scaleX = if (isRightScale) chartRight else 0f
+            for (alert in activeAlerts) {
+                val alertY = priceToY(alert.targetPrice)
+                if (alertY in 0f..chartHeight) {
+                    drawRect(
+                        color = AlertLineColor,
+                        topLeft = Offset(scaleX, alertY - 10f),
+                        size = Size(priceScaleWidth, 20f)
+                    )
+                    drawContext.canvas.nativeCanvas.drawText(
+                        formatPriceLabel(alert.targetPrice, settings, basePrice),
+                        scaleX + priceScaleWidth / 2f,
+                        alertY + 4f,
+                        alertScalePaint
+                    )
+                }
+            }
 
             // Active Price Indicator Pill on Price Scale
-            val scaleX = if (isRightScale) chartRight else 0f
             val activePillPrice = when (candlePriceSource) {
                 CandlePriceSource.LAST -> lastP
                 CandlePriceSource.MARK -> if (priceInfo.markPrice > 0) priceInfo.markPrice else latestCandle?.close ?: 0.0
@@ -687,6 +668,7 @@ fun CandlestickChart(
                     CandlePriceSource.LAST -> if (latestCandle?.isBullish == true) BullGreen else BearRed
                 }
                 if (pillY in 0f..chartHeight) {
+                    // Price Pill
                     drawRect(
                         color = pillColor,
                         topLeft = Offset(scaleX, pillY - 12f),
@@ -703,24 +685,52 @@ fun CandlestickChart(
                             textAlign = Paint.Align.CENTER
                         }
                     )
-                }
-            }
 
-            // Plus (+) Price Line Pill on Scale (Shows exact target price in blue)
-            activePriceLinePrice?.let { plPrice ->
-                val lineY = priceToY(plPrice)
-                if (lineY in 0f..chartHeight) {
-                    drawRect(
-                        color = TVBlue,
-                        topLeft = Offset(scaleX, lineY - 12f),
-                        size = Size(priceScaleWidth, 24f)
-                    )
-                    drawContext.canvas.nativeCanvas.drawText(
-                        formatPriceLabel(plPrice, settings, basePrice),
-                        scaleX + priceScaleWidth / 2f,
-                        lineY + 5f,
-                        priceTagPaint
-                    )
+                    // Bar Time Count Down directly under the price line in the price scale
+                    val candleEndTime = latestCandle?.let { candle ->
+                        if (candle.closeTime > candle.openTime) {
+                            candle.closeTime + 1L
+                        } else {
+                            candle.openTime + timeframe.durationMs
+                        }
+                    } ?: (currentTimeMs + timeframe.durationMs)
+
+                    val remainingSec = ((candleEndTime - currentTimeMs).coerceAtLeast(0L) / 1000L)
+                    val countdownStr = when {
+                        remainingSec >= 86400L -> {
+                            val days = remainingSec / 86400L
+                            val hrs = (remainingSec % 86400L) / 3600L
+                            "${days}d ${hrs}h"
+                        }
+                        remainingSec >= 3600L -> {
+                            val hrs = remainingSec / 3600L
+                            val mins = (remainingSec % 3600L) / 60L
+                            val secs = remainingSec % 60L
+                            String.format(Locale.US, "%02d:%02d:%02d", hrs, mins, secs)
+                        }
+                        else -> {
+                            val mins = remainingSec / 60L
+                            val secs = remainingSec % 60L
+                            String.format(Locale.US, "%02d:%02d", mins, secs)
+                        }
+                    }
+
+                    // Countdown badge right under the active price line
+                    val countdownTop = pillY + 14f
+                    val countdownHeight = 18f
+                    if (countdownTop + countdownHeight <= chartHeight) {
+                        drawRect(
+                            color = DarkSurface,
+                            topLeft = Offset(scaleX + 4f, countdownTop),
+                            size = Size(priceScaleWidth - 8f, countdownHeight)
+                        )
+                        drawContext.canvas.nativeCanvas.drawText(
+                            countdownStr,
+                            scaleX + priceScaleWidth / 2f,
+                            countdownTop + 14f,
+                            countdownPaint
+                        )
+                    }
                 }
             }
 
@@ -886,27 +896,6 @@ fun CandlestickChart(
                 val changeStr = (if (displayCandle.changePercent >= 0) "+" else "") +
                         String.format(Locale.US, "%.2f%%", displayCandle.changePercent)
                 drawContext.canvas.nativeCanvas.drawText(changeStr, curX, curY, ohlcPaint)
-                curX += ohlcPaint.measureText(changeStr)
-
-                // Real-Time Candle Countdown Timer (Synced with server candle openTime + duration)
-                latestCandle?.let { lc ->
-                    val candleEndMs = lc.openTime + timeframe.durationMs
-                    val remainingMs = (candleEndMs - currentTimeMs).coerceAtLeast(0L)
-                    val totalSec = remainingMs / 1000L
-                    val hours = totalSec / 3600L
-                    val minutes = (totalSec % 3600L) / 60L
-                    val seconds = totalSec % 60L
-
-                    val timerText = if (hours > 0) {
-                        String.format(Locale.US, "  ⏳ %02d:%02d:%02d", hours, minutes, seconds)
-                    } else {
-                        String.format(Locale.US, "  ⏳ %02d:%02d", minutes, seconds)
-                    }
-
-                    ohlcPaint.color = TVBlue.toArgb()
-                    ohlcPaint.typeface = Typeface.DEFAULT_BOLD
-                    drawContext.canvas.nativeCanvas.drawText(timerText, curX, curY, ohlcPaint)
-                }
             }
         }
 
@@ -1141,7 +1130,7 @@ fun CandlestickChart(
                         }
                     } else {
                         // CURSOR MODE: Multi-touch focal pinch zoom, buttery smooth pan, double tap reset
-                        Modifier.pointerInput(activeDrawingTool, selectedDrawing?.id, drawings.size, isPriceLineActive, isPriceLineFixed, activePriceLinePrice, alerts.size) {
+                        Modifier.pointerInput(activeDrawingTool, selectedDrawing?.id, drawings.size) {
                             val chartW = size.width.toFloat()
                             val chartH = size.height.toFloat()
                             var lastTapTime = 0L
@@ -1231,7 +1220,6 @@ fun CandlestickChart(
                                         val currDrawing = selectedDrawing
                                         var activeHandleIndex = -1
                                         var isDraggingBody = false
-                                        var isDraggingPriceLine = false
 
                                         fun tToX(t: Long): Float {
                                             if (candles.isEmpty()) return chartW
@@ -1300,13 +1288,6 @@ fun CandlestickChart(
                                             return effMinP + norm.toDouble() * scaledRange
                                         }
 
-                                        if (activePriceLinePrice != null) {
-                                            val plY = pToY(activePriceLinePrice!!)
-                                            if (!isPriceLineFixed || abs(startPos.y - plY) <= 32f) {
-                                                isDraggingPriceLine = true
-                                            }
-                                        }
-
                                         if (currDrawing != null && !areDrawingsHidden && !currDrawing.isLocked) {
                                             val handles = getDrawingHandles(currDrawing, ::tToX, ::pToY, 0f, chartW, chartH)
                                             val hitIdx = handles.indexOfFirst { (it - startPos).getDistance() <= 38f }
@@ -1323,31 +1304,6 @@ fun CandlestickChart(
                                             if (activeChanges.isEmpty()) {
                                                 // Pointer UP
                                                 val totalDist = (lastPos - startPos).getDistance()
-                                                if (activePriceLinePrice != null) {
-                                                    val pl = activePriceLinePrice!!
-                                                    val plY = pToY(pl)
-                                                    if (!isPriceLineFixed) {
-                                                        if (!hasDragged) {
-                                                            activePriceLinePrice = yToP(startPos.y)
-                                                        }
-                                                        isPriceLineFixed = true
-                                                    } else {
-                                                        if (!hasDragged && totalDist < 14f) {
-                                                            if (abs(startPos.y - plY) <= 32f) {
-                                                                // Tapped on the price line or (+) action button
-                                                                activePriceLinePrice = null
-                                                                isPriceLineFixed = false
-                                                                onDeactivatePriceLine()
-                                                                onAddAlertAtPrice(pl)
-                                                            } else {
-                                                                // Tapped elsewhere on the chart: reposition the price line there
-                                                                activePriceLinePrice = yToP(startPos.y)
-                                                            }
-                                                        }
-                                                    }
-                                                    break
-                                                }
-
                                                 if (!hasDragged && totalDist < 14f) {
                                                     val now = System.currentTimeMillis()
                                                     if (now - lastTapTime < 320) {
@@ -1370,29 +1326,19 @@ fun CandlestickChart(
                                                             val candleIdx = (rightIdxFloat - distFromRight).roundToInt().coerceIn(0, candles.lastIndex)
                                                             onSelectCandleForReplay(candleIdx)
                                                         } else {
-                                                            // Check if tapping an existing alert dotted line to edit/delete
-                                                            val activeAlerts = alerts.filter { it.symbol.equals(symbol, ignoreCase = true) && it.isActive }
-                                                            val tappedAlert = activeAlerts.firstOrNull { alert ->
-                                                                val alertY = pToY(alert.targetPrice)
-                                                                abs(startPos.y - alertY) <= 22f
-                                                            }
-                                                            if (tappedAlert != null) {
-                                                                onEditAlert(tappedAlert)
-                                                            } else {
-                                                                val tapped = findDrawingNearPoint(
-                                                                    tapOffset = startPos,
-                                                                    drawings = drawings,
-                                                                    candles = candles,
-                                                                    candleWidth = candleWidth,
-                                                                    scrollOffset = scrollOffset,
-                                                                    chartWidth = chartW,
-                                                                    chartHeight = chartH,
-                                                                    settings = settings,
-                                                                    verticalOffset = verticalPanOffset,
-                                                                    verticalScaleRatio = verticalScaleRatio
-                                                                )
-                                                                onSelectDrawing(tapped)
-                                                            }
+                                                            val tapped = findDrawingNearPoint(
+                                                                tapOffset = startPos,
+                                                                drawings = drawings,
+                                                                candles = candles,
+                                                                candleWidth = candleWidth,
+                                                                scrollOffset = scrollOffset,
+                                                                chartWidth = chartW,
+                                                                chartHeight = chartH,
+                                                                settings = settings,
+                                                                verticalOffset = verticalPanOffset,
+                                                                verticalScaleRatio = verticalScaleRatio
+                                                            )
+                                                            onSelectDrawing(tapped)
                                                         }
                                                     }
                                                 }
@@ -1416,9 +1362,7 @@ fun CandlestickChart(
                                                 val deltaX = curPos.x - lastPos.x
                                                 val deltaY = curPos.y - lastPos.y
 
-                                                if (isDraggingPriceLine && activePriceLinePrice != null) {
-                                                    activePriceLinePrice = yToP(curPos.y)
-                                                } else if (activeHandleIndex >= 0 && currDrawing != null) {
+                                                if (activeHandleIndex >= 0 && currDrawing != null) {
                                                     val newPoint = screenToChartPoint(
                                                         curPos, candles, candleWidth, scrollOffset,
                                                         chartW, chartH, settings, verticalPanOffset, verticalScaleRatio
